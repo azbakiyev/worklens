@@ -48,6 +48,7 @@ APP_CATEGORIES: dict[str, str] = {
     "safari": "browser",
     "firefox": "browser",
     "microsoft edge": "browser",
+    "arc": "browser",
     "yandex": "browser",
     "telegram": "messenger",
     "whatsapp": "messenger",
@@ -63,12 +64,17 @@ APP_CATEGORIES: dict[str, str] = {
     "visual studio code": "ide",
     "pycharm": "ide",
     "xcode": "ide",
+    "cursor": "ide",
     "adobe acrobat": "pdf",
     "preview": "pdf",
     "finder": "file_manager",
     "explorer": "file_manager",
     "terminal": "terminal",
     "iterm2": "terminal",
+    "warp": "terminal",
+    "extella": "ai_platform",
+    "claude": "ai_platform",
+    "chatgpt": "ai_platform",
 }
 
 # Apps that trigger auto-pause (privacy protection)
