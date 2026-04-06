@@ -1,68 +1,135 @@
-"""WorkLens — main entry point for development testing."""
+"""WorkLens -- entry point."""
 import logging
-import time
 import signal
 import sys
+import time
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler()]
+    handlers=[logging.StreamHandler()],
 )
+logging.getLogger("worklens").setLevel(logging.DEBUG)
 logger = logging.getLogger("worklens")
 
 
 def main() -> None:
-    logger.info("🔵 WorkLens starting...")
+    logger.info("[WorkLens] Starting...")
 
     from worklens.storage.database import DatabaseManager
     from worklens.capture.capture_module import ActivityCapture
     from worklens.pattern.pattern_engine import PatternEngine
+    from worklens.config_manager import ConfigManager
 
-    db = DatabaseManager()
-    logger.info(f"✅ Database ready at {db.db_path}")
+    config = ConfigManager()
+    db     = DatabaseManager()
+    logger.info(f"[OK] Database: {db.db_path}")
 
     capture = ActivityCapture(db_manager=db, interval=5.0)
     capture.start()
-    logger.info("✅ Capture started — polling every 5 seconds")
-    logger.info("   Press Ctrl+C to stop\n")
+    logger.info("[OK] Capture started")
 
     pattern_engine = PatternEngine(db)
 
+    tg_monitor = _setup_telegram(db, config)
+    if tg_monitor:
+        tg_monitor.start()
+        logger.info("[OK] Telegram monitor started")
+    else:
+        logger.info("[--] Telegram monitor skipped  (run with --setup-telegram to configure)")
+
     def on_shutdown(sig, frame):
-        logger.info("\n🛑 Shutting down WorkLens...")
+        logger.info("[WorkLens] Shutting down...")
         capture.stop()
+        if tg_monitor:
+            tg_monitor.stop()
         sys.exit(0)
 
-    signal.signal(signal.SIGINT, on_shutdown)
+    signal.signal(signal.SIGINT,  on_shutdown)
     signal.signal(signal.SIGTERM, on_shutdown)
 
+    logger.info("   Press Ctrl+C to stop\n")
     tick = 0
     while True:
         time.sleep(30)
         tick += 1
         _print_stats(db)
 
-        # Run pattern analysis every 5 minutes (10 ticks × 30 sec)
         if tick % 10 == 0:
-            logger.info("🔍 Running pattern analysis...")
+            logger.info("[WorkLens] Running pattern analysis...")
             try:
                 report = pattern_engine.run(days_back=14, min_frequency=2)
-                logger.info("\n" + report.summary())
+                if report.sequence_patterns or report.time_patterns:
+                    logger.info("\n" + report.summary())
+                else:
+                    logger.info("Pattern analysis: not enough data yet -- keep running")
             except Exception as e:
-                logger.error(f"Pattern analysis failed: {e}")
+                logger.error(f"Pattern analysis error: {e}")
+
+
+def _setup_telegram(db, config):
+    """
+    Returns a configured TelegramMonitor or None.
+
+    Logic:
+      - Already configured (session file + api_id in config) -> start silently
+      - --setup-telegram flag -> run interactive setup
+      - Neither -> skip
+    """
+    from pathlib import Path
+    SESSION_PATH = Path.home() / ".worklens" / "telegram.session"
+    run_setup    = "--setup-telegram" in sys.argv
+
+    already_configured = SESSION_PATH.exists() and config.has("telegram_api_id")
+
+    if not already_configured and not run_setup:
+        return None
+
+    if not config.has("telegram_api_id") or not config.has("openai_api_key"):
+        if not run_setup:
+            logger.info("Telegram not configured. Run: python main.py --setup-telegram")
+            return None
+
+        print("\n[Setup] Telegram API keys")
+        print("  Get them at: https://my.telegram.org -> API development tools\n")
+        api_id   = input("  api_id   : ").strip()
+        api_hash = input("  api_hash : ").strip()
+        config.set("telegram_api_id",   int(api_id))
+        config.set("telegram_api_hash", api_hash)
+
+        print("\n[Setup] OpenAI API key")
+        print("  Get it at: https://platform.openai.com/api-keys")
+        openai_key = input("  OpenAI key (sk-...): ").strip()
+        config.set("openai_api_key", openai_key)
+
+    from worklens.messenger.telegram_monitor import TelegramMonitor
+    monitor = TelegramMonitor(
+        db_manager     = db,
+        api_id         = config.get("telegram_api_id"),
+        api_hash       = config.get("telegram_api_hash"),
+        openai_api_key = config.get("openai_api_key"),
+    )
+
+    if run_setup or not SESSION_PATH.exists():
+        if not monitor.setup():
+            return None
+
+    return monitor
 
 
 def _print_stats(db) -> None:
     try:
         from sqlalchemy import text
         with db.get_session() as session:
-            total = session.execute(text("SELECT COUNT(*) FROM activity_events")).scalar()
-            top = session.execute(text(
+            total   = session.execute(text("SELECT COUNT(*) FROM activity_events")).scalar()
+            top     = session.execute(text(
                 "SELECT app_name, COUNT(*) as cnt FROM activity_events "
                 "GROUP BY app_name ORDER BY cnt DESC LIMIT 5"
             )).fetchall()
-        logger.info(f"📊 Total events: {total}")
+            intents = session.execute(text("SELECT COUNT(*) FROM messenger_intents")).scalar() or 0
+            files   = session.execute(text("SELECT COUNT(*) FROM received_files")).scalar()   or 0
+
+        logger.info(f"[Stats] Events: {total} | Intents: {intents} | Files: {files}")
         for row in top:
             logger.info(f"   {row[0]:<30} {row[1]} events")
     except Exception as e:
