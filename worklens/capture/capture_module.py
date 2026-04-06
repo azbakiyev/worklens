@@ -177,22 +177,17 @@ def get_clipboard_type() -> str:
         if not content:
             return "empty"
         stripped = content.strip()
-        # Tabular: has tabs or multi-line with tabs (likely copied from Excel)
         if "\t" in stripped:
             return "tabular"
-        # Number
         try:
             float(stripped.replace(",", ".").replace(" ", ""))
             return "number"
         except ValueError:
             pass
-        # Email
         if "@" in stripped and "." in stripped and len(stripped) < 100 and " " not in stripped:
             return "email"
-        # URL
         if stripped.startswith(("http://", "https://", "ftp://")):
             return "url"
-        # Short text
         if len(stripped) < 80:
             return "short_text"
         return "text"
@@ -277,12 +272,18 @@ class ActivityCapture:
             logger.debug(f"Privacy zone: {app_name} — skipping")
             return
 
+        # Resolve values into local variables BEFORE creating the ORM object.
+        # This prevents SQLAlchemy from trying to lazy-load attributes after
+        # the session has already been closed (bhk3 error).
+        category: str = categorize_app(app_name)
+        clip_type: str = get_clipboard_type()
+
         event = ActivityEvent(
             timestamp=datetime.utcnow(),
             app_name=app_name,
-            window_category=categorize_app(app_name),
+            window_category=category,
             activity_level="medium",
-            clipboard_type=get_clipboard_type(),
+            clipboard_type=clip_type,
             input_method="unknown",
             session_id=self._session_id,
             is_privacy_zone=False,
@@ -291,4 +292,5 @@ class ActivityCapture:
         with self.db.get_session() as session:
             session.add(event)
 
-        logger.debug(f"[{app_name}] cat={event.window_category} clip={event.clipboard_type}")
+        # Use local vars — NOT event.* — session is already closed here.
+        logger.debug(f"[{app_name}] cat={category} clip={clip_type}")
