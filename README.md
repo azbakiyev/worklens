@@ -27,27 +27,30 @@ worklens/
 
 ## 📦 Модули
 
-### 1. Capture Module
-Мониторинг активных приложений, заголовков окон, типов данных в буфере обмена. Работает на Windows / macOS / Linux. Никаких кейлоггеров — только структурные метаданные.
+### 1. Capture Module ✅
+Мониторинг активных приложений, категоризация (spreadsheet/browser/email/etc.), тип данных в буфере обмена. Работает на Windows / macOS / Linux. Никаких кейлоггеров — только структурные метаданные. Privacy zones — автоматическая пауза при открытии менеджеров паролей и банк-клиентов.
 
-### 2. Messenger Intelligence Module  
-Подключается к Telegram (Telethon MTProto API) и WhatsApp (Web/Business API). Анализирует сообщения на наличие задач, договорённостей, файлов — **без хранения текста сообщений**.
+### 2. Storage / Database ✅
+SQLAlchemy + SQLite. Таблицы: `activity_events`, `detected_patterns`, `automation_suggestions`, `messenger_intents`, `received_files`. Контекстный менеджер сессий с авто-rollback. Все данные — только на локальной машине.
 
-### 3. Pattern Engine
+### 3. Messenger Intelligence Module
+Подключается к Telegram (Telethon MTProto API) и WhatsApp. Анализирует сообщения на наличие задач, договорённостей, файлов — **без хранения текста сообщений**.
+
+### 4. Pattern Engine
 Алгоритмы: PrefixSpan (частые последовательности приложений), DBSCAN (кластеризация сессий), Prophet (временные паттерны). Скоринг паттернов по частоте × время × потенциал автоматизации.
 
-### 4. extella Integration
+### 5. extella Integration
 Мост между обнаружением паттернов и реализацией автоматизаций. Каждый паттерн с высоким score превращается в задание для extella агента.
 
-### 5. Report Generator
+### 6. Report Generator
 Генерация PDF-отчёта для клиентов: топ возможностей автоматизации, расчёт ROI, дорожная карта внедрения.
 
 ## 🔒 Принципы приватности
 
-- ✅ Все данные хранятся **только локально** (SQLite + AES-256)
+- ✅ Все данные хранятся **только локально** (SQLite)
 - ✅ Текст сообщений **не сохраняется** — только структурные интенты
 - ✅ Сотрудник сам выбирает какие чаты анализировать
-- ✅ Privacy zones — исключение приложений и временных окон
+- ✅ Privacy zones — автоматическая пауза при открытии 1Password, Keychain, банк-клиентов
 - ✅ Одна кнопка «Удалить все мои данные»
 
 ## 🛠️ Технологии
@@ -55,18 +58,18 @@ worklens/
 | Компонент | Технология |
 |---|---|
 | Desktop UI | PyQt6 + pystray |
-| Мониторинг активности | pygetwindow + win32gui (Win) / AppKit (Mac) |
+| Мониторинг активности | osascript (Mac) / win32gui (Win) / xdotool (Linux) |
 | Telegram | Telethon (MTProto API) |
 | Pattern Mining | mlxtend (PrefixSpan) |
 | Clustering | scikit-learn (DBSCAN) |
 | Local LLM | Ollama + llama3.2 |
 | Cloud LLM | Claude API / GPT-4o |
 | OCR | Groq Vision (Llama 4 Scout) |
-| База данных | SQLite + SQLCipher (AES-256) |
+| База данных | SQLite + SQLAlchemy |
 | Отчёты | ReportLab |
 | Сборка | PyInstaller |
 
-## 🚀 Установка (разработка)
+## 🚀 Установка и запуск (разработка)
 
 ```bash
 git clone https://github.com/azbakiyev/worklens.git
@@ -77,40 +80,51 @@ pip install -r requirements.txt
 python main.py
 ```
 
+**Что увидите:**
+```
+2026-04-06 10:30:00 [INFO] worklens: 🔵 WorkLens starting...
+2026-04-06 10:30:00 [INFO] worklens: ✅ Database ready at ~/.worklens/data.db
+2026-04-06 10:30:00 [INFO] worklens: ✅ Capture started — polling every 5 seconds
+# Каждые 30 сек:
+2026-04-06 10:30:30 [INFO] worklens: 📊 Total events: 6
+2026-04-06 10:30:30 [INFO] worklens:    Google Chrome              4 events
+2026-04-06 10:30:30 [INFO] worklens:    Terminal                   2 events
+```
+
 ## 📁 Структура файлов
 
 ```
 worklens/
-├── main.py                      # Точка входа
+├── main.py                          # Точка входа
 ├── requirements.txt
-├── config.yaml                  # Конфигурация (без секретов)
-├── .env.example                 # Пример env переменных
+├── config.yaml                      # Конфигурация (без секретов)
 ├── worklens/
 │   ├── capture/
-│   │   ├── capture_module.py    # Основной захват активности
-│   │   └── platform_adapters/  # Win / Mac / Linux адаптеры
+│   │   ├── __init__.py
+│   │   └── capture_module.py        # ✅ Готово: захват + категоризация
 │   ├── messenger/
-│   │   ├── telegram_monitor.py  # Telethon интеграция
-│   │   ├── whatsapp_monitor.py  # WhatsApp Web / Business API
-│   │   └── intent_extractor.py  # LLM-анализ интентов
+│   │   ├── telegram_monitor.py      # ⏳ Следующий этап
+│   │   ├── whatsapp_monitor.py
+│   │   └── intent_extractor.py
 │   ├── pattern/
-│   │   ├── pattern_engine.py    # Основной движок
-│   │   ├── sequence_miner.py    # PrefixSpan
-│   │   ├── time_analyzer.py     # Временные паттерны
-│   │   └── scorer.py            # Скоринг автоматизации
+│   │   ├── pattern_engine.py        # ⏳ Запланирован
+│   │   ├── sequence_miner.py
+│   │   ├── time_analyzer.py
+│   │   └── scorer.py
 │   ├── storage/
-│   │   ├── database.py          # SQLite + шифрование
-│   │   └── models.py            # SQLAlchemy модели
+│   │   ├── __init__.py
+│   │   ├── database.py              # ✅ Готово: DatabaseManager
+│   │   └── models.py                # ✅ Готово: 5 таблиц
 │   ├── extella/
-│   │   ├── extella_client.py    # REST API клиент
+│   │   ├── extella_client.py        # ⏳ Запланирован
 │   │   └── automation_builder.py
 │   ├── ui/
-│   │   ├── tray.py              # Системный трей
-│   │   ├── dashboard.py         # Главный дашборд
-│   │   └── messenger_center.py  # Центр мессенджеров
+│   │   ├── tray.py                  # ⏳ Запланирован
+│   │   ├── dashboard.py
+│   │   └── messenger_center.py
 │   └── reports/
-│       ├── report_generator.py  # PDF генератор
-│       └── roi_calculator.py    # Расчёт ROI
+│       ├── report_generator.py      # ⏳ Запланирован
+│       └── roi_calculator.py
 └── tests/
     ├── test_capture.py
     ├── test_pattern.py
@@ -121,14 +135,15 @@ worklens/
 
 | Модуль | Статус | Заметки |
 |---|---|---|
-| Capture Module | 🟡 В разработке | Базовый захват активности |
-| Storage / DB | 🟡 В разработке | SQLite схема |
-| Pattern Engine | ⏳ Запланирован | |
-| Telegram Monitor | ⏳ Запланирован | |
-| WhatsApp Monitor | ⏳ Запланирован | |
-| extella Integration | ⏳ Запланирован | |
-| UI / Tray | ⏳ Запланирован | |
-| Report Generator | ⏳ Запланирован | |
+| Storage / DB | ✅ Готово | SQLite + 5 таблиц (models.py + database.py) |
+| Capture Module | ✅ Готово | macOS/Win/Linux, категоризация, privacy zones |
+| main.py (точка входа) | ✅ Готово | Запуск + статистика каждые 30 сек |
+| Pattern Engine | ⏳ Следующий | PrefixSpan + DBSCAN + Prophet |
+| Telegram Monitor | ⏳ Следующий | Telethon MTProto |
+| WhatsApp Monitor | ⏳ Запланирован | Web / Business API |
+| extella Integration | ⏳ Запланирован | REST API клиент |
+| UI / Tray | ⏳ Запланирован | PyQt6 + pystray |
+| Report Generator | ⏳ Запланирован | PDF для клиентов |
 
 ## 📝 Правила разработки
 
