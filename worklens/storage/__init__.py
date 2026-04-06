@@ -1,1 +1,1 @@
-"""Local encrypted storage layer (SQLite)."""
+"""WorkLens storage layer — SQLite database and models."""
