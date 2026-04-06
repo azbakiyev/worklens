@@ -1,1 +1,1 @@
-"""Activity capture module — monitors active apps and clipboard type."""
+"""WorkLens capture module — activity monitoring layer."""
