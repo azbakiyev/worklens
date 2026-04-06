@@ -1,0 +1,57 @@
+# WorkLens Configuration
+# Secrets (API keys, tokens) go in .env — NEVER here
+
+app:
+  name: WorkLens
+  version: 0.1.0
+  data_dir: ~/WorkLens/data      # where local DB and cache are stored
+  log_level: INFO
+
+capture:
+  interval_seconds: 5            # how often to sample active window
+  enabled: true
+  privacy_zones:
+    apps:                        # apps to exclude from monitoring
+      - 1password
+      - keychain
+      - keepass
+    url_patterns:                # browser URL patterns to exclude
+      - bank
+      - online-banking
+    pause_on_lock: true          # pause when screen is locked
+    lunch_break:
+      enabled: false
+      start: "12:00"
+      end: "13:00"
+
+messenger:
+  telegram:
+    enabled: false               # requires user to connect manually
+    work_chats_only: true        # only analyse chats user selects
+    analyse_files: true
+  whatsapp:
+    enabled: false
+    method: web                  # web | business_api
+
+pattern:
+  min_frequency: 5              # minimum occurrences to count as pattern
+  min_time_minutes: 10          # minimum time cost to flag pattern
+  analysis_interval_hours: 4   # how often to run pattern engine
+
+llm:
+  provider: claude               # claude | openai | ollama
+  model: claude-3-5-haiku-20241022
+  local_fallback: true           # fallback to Ollama if cloud fails
+  ollama_model: llama3.2
+  ollama_host: http://localhost:11434
+
+extella:
+  api_url: https://api.extella.ai
+  auto_suggest: true             # send high-score patterns to extella
+  min_score_threshold: 0.7      # minimum automation score to suggest
+
+reports:
+  output_dir: ~/Downloads
+  include_charts: true
+  currency: KZT                  # for ROI calculations
+  hourly_rate: 1500              # default hourly rate (tenge)
