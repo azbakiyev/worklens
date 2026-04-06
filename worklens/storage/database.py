@@ -32,7 +32,10 @@ class DatabaseManager:
             poolclass=StaticPool,
         )
         self._SessionLocal = sessionmaker(
-            autocommit=False, autoflush=False, bind=self.engine
+            autocommit=False,
+            autoflush=False,
+            bind=self.engine,
+            expire_on_commit=False,  # keeps ORM attrs accessible after session.close()
         )
         self._init_db()
         logger.info(f"Database initialized at {self.db_path}")
