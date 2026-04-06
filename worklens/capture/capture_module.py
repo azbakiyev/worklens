@@ -22,6 +22,8 @@ import uuid
 from datetime import datetime
 from typing import Optional, Tuple
 
+from sqlalchemy import text
+
 logger = logging.getLogger(__name__)
 
 SYSTEM = platform.system()  # Darwin / Windows / Linux
@@ -78,6 +80,16 @@ PRIVACY_APPS: set[str] = {
     "system preferences",
     "system settings",
 }
+
+# Raw SQL INSERT — avoids all ORM session lifecycle issues
+_INSERT_EVENT = text("""
+    INSERT INTO activity_events
+        (timestamp, app_name, window_category, activity_level,
+         clipboard_type, input_method, session_id, is_privacy_zone)
+    VALUES
+        (:ts, :app_name, :window_category, :activity_level,
+         :clipboard_type, :input_method, :session_id, :is_privacy_zone)
+""")
 
 
 # ---------------------------------------------------------------------------
@@ -262,35 +274,33 @@ class ActivityCapture:
             time.sleep(self.interval)
 
     def _capture_once(self) -> None:
-        """Take a single activity snapshot and persist it."""
-        from worklens.storage.models import ActivityEvent
+        """Take a single activity snapshot and persist it via raw SQL.
 
+        We use a raw SQL INSERT (not ORM) to avoid SQLAlchemy's session
+        lifecycle issues (detached-instance / bhk3 error) in a
+        multi-threaded background loop.
+        """
         app_name, _ = get_active_app()
 
-        # Auto-pause on privacy apps
         if is_privacy_zone(app_name):
             logger.debug(f"Privacy zone: {app_name} — skipping")
             return
 
-        # Resolve values into local variables BEFORE creating the ORM object.
-        # This prevents SQLAlchemy from trying to lazy-load attributes after
-        # the session has already been closed (bhk3 error).
         category: str = categorize_app(app_name)
         clip_type: str = get_clipboard_type()
 
-        event = ActivityEvent(
-            timestamp=datetime.utcnow(),
-            app_name=app_name,
-            window_category=category,
-            activity_level="medium",
-            clipboard_type=clip_type,
-            input_method="unknown",
-            session_id=self._session_id,
-            is_privacy_zone=False,
-        )
+        params = {
+            "ts": datetime.utcnow().isoformat(),
+            "app_name": app_name,
+            "window_category": category,
+            "activity_level": "medium",
+            "clipboard_type": clip_type,
+            "input_method": "unknown",
+            "session_id": self._session_id,
+            "is_privacy_zone": 0,
+        }
 
         with self.db.get_session() as session:
-            session.add(event)
+            session.execute(_INSERT_EVENT, params)
 
-        # Use local vars — NOT event.* — session is already closed here.
         logger.debug(f"[{app_name}] cat={category} clip={clip_type}")
