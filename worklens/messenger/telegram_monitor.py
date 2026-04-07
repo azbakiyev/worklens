@@ -1,15 +1,4 @@
-"""
-Telegram Monitor -- connects to Telegram via MTProto (Telethon).
-Works regardless of which device the user is on (phone, tablet, PC).
-
-PRIVACY:
-  - Message text analyzed and immediately discarded -- never stored
-  - Voice files deleted after Whisper transcription
-  - Only structured JSON intents written to SQLite
-  - Session stored at ~/.worklens/telegram.session
-
-SETUP: python main.py --setup-telegram
-"""
+"""Telegram Monitor -- MTProto via Telethon."""
 import asyncio
 import logging
 import threading
@@ -48,24 +37,25 @@ class TelegramMonitor:
 
         if classifier.has_approved_chats() and SESSION_PATH.exists():
             self._approved_ids = classifier.load_approved_ids()
-            logger.info(f"Telegram already configured. Watching {len(self._approved_ids)} chats.")
+            logger.info(f"Already configured. Watching {len(self._approved_ids)} chats.")
             return True
 
         print("\n[WorkLens] Telegram Setup")
         print("=" * 50)
-        print("  Session is stored locally -- never transmitted.\n")
+        print("  Session stored locally -- never transmitted.\n")
 
         if not self._phone:
-            self._phone = input("  Phone (+7...): ").strip()
+            self._phone = input("  Phone number (+7...): ").strip()
 
+        print("  Connecting...")
         try:
             with TelegramClient(str(SESSION_PATH), self._api_id, self._api_hash) as client:
-                client.start(phone=self._phone)
+                # Pass phone as lambda -- prevents Telethon from asking again
+                client.start(phone=lambda: self._phone)
                 me = client.get_me()
                 name = f"{me.first_name or ''} {me.last_name or ''}".strip()
                 print(f"  Connected as: {name}\n")
-                print("  Scanning chats (names only, no message content)...")
-
+                print("  Scanning chats...")
                 chats = []
                 for dialog in client.iter_dialogs(limit=150):
                     entity = dialog.entity
@@ -85,11 +75,10 @@ class TelegramMonitor:
                         chat_type=chat_type,
                         member_count=member_count,
                     ))
-
+                print(f"  Found {len(chats)} chats. Opening browser...")
                 classifier.classify(chats)
                 approved = open_chat_selector(chats, self.db, classifier)
                 self._approved_ids = {c.chat_id for c in approved}
-
         except Exception as e:
             logger.error(f"Telegram setup error: {e}")
             print(f"  Error: {e}")
@@ -97,15 +86,14 @@ class TelegramMonitor:
         return True
 
     def start(self) -> None:
-        if self._running:
-            return
+        if self._running: return
         if not SESSION_PATH.exists():
             logger.warning("No Telegram session. Run: python main.py --setup-telegram")
             return
         from worklens.messenger.chat_classifier import ChatClassifier
         self._approved_ids = ChatClassifier(self.db).load_approved_ids()
         if not self._approved_ids:
-            logger.warning("No approved chats -- Telegram monitor skipped.")
+            logger.warning("No approved chats -- Telegram skipped.")
             return
         self._running = True
         self._loop    = asyncio.new_event_loop()
@@ -115,17 +103,13 @@ class TelegramMonitor:
 
     def stop(self) -> None:
         self._running = False
-        if self._loop:
-            self._loop.call_soon_threadsafe(self._loop.stop)
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=10)
+        if self._loop: self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._thread and self._thread.is_alive(): self._thread.join(timeout=10)
 
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self._loop)
-        try:
-            self._loop.run_until_complete(self._async_main())
-        except Exception as e:
-            logger.error(f"Telegram loop error: {e}")
+        try: self._loop.run_until_complete(self._async_main())
+        except Exception as e: logger.error(f"Telegram loop error: {e}")
 
     async def _async_main(self) -> None:
         from telethon import TelegramClient, events
@@ -133,13 +117,12 @@ class TelegramMonitor:
             @client.on(events.NewMessage(incoming=True))
             async def handler(event):
                 try: await self._handle_event(event)
-                except Exception as e: logger.error(f"Handler error: {e}")
+                except Exception as e: logger.error(f"Handler: {e}")
             logger.info("Telethon connected -- listening...")
             await client.run_until_disconnected()
 
     async def _handle_event(self, event) -> None:
-        if event.chat_id not in self._approved_ids:
-            return
+        if event.chat_id not in self._approved_ids: return
         msg = event.message
         if not msg: return
         if msg.voice or msg.audio:      await self._handle_voice(msg)
@@ -152,7 +135,7 @@ class TelegramMonitor:
         intent = await asyncio.get_event_loop().run_in_executor(None, self._extract_intent, text)
         self._save_intent("telegram", msg.chat_id, intent)
         if intent.get("action_required") or intent.get("urgency") == "high":
-            logger.info(f"[TG] Action required | chat={msg.chat_id} urgency={intent['urgency']}")
+            logger.info(f"[TG] Action required | chat={msg.chat_id}")
 
     async def _handle_voice(self, msg) -> None:
         path = VOICE_CACHE / f"voice_{msg.id}.ogg"
@@ -160,16 +143,12 @@ class TelegramMonitor:
             await msg.download_media(str(path))
             intent = await asyncio.get_event_loop().run_in_executor(None, self._process_voice, str(path))
             self._save_intent("telegram_voice", msg.chat_id, intent)
-            if intent.get("action_required"):
-                logger.info(f"[TG] Voice task | chat={msg.chat_id}")
         except Exception as e:
-            logger.error(f"Voice handler error: {e}")
-            path.unlink(missing_ok=True)
+            logger.error(f"Voice: {e}"); path.unlink(missing_ok=True)
 
     async def _handle_file(self, msg) -> None:
         doc = msg.document
-        if not doc:
-            self._save_file("telegram", "image", "photo"); return
+        if not doc: self._save_file("telegram", "image", "photo"); return
         filename = ""
         for attr in (doc.attributes or []):
             if hasattr(attr, "file_name"): filename = attr.file_name or ""; break
@@ -178,9 +157,7 @@ class TelegramMonitor:
                  "spreadsheet" if ext in {".xls",".xlsx",".csv"} else
                  "document" if ext in {".doc",".docx"} else
                  "image" if ext in IMAGE_EXTENSIONS else "other")
-        category = self._guess_category(filename)
-        logger.info(f"[TG] File: {filename or 'unnamed'} [{ftype}] cat={category}")
-        self._save_file("telegram", ftype, category)
+        self._save_file("telegram", ftype, self._guess_category(filename))
 
     def _extract_intent(self, text):
         from worklens.messenger.intent_extractor import IntentExtractor
@@ -223,8 +200,8 @@ class TelegramMonitor:
                      "src": source, "ft": ftype, "cat": category})
         except Exception as e: logger.error(f"save_file: {e}")
 
-    def _guess_category(self, filename):
-        f = (filename or "").lower()
+    def _guess_category(self, f):
+        f = (f or "").lower()
         if any(w in f for w in ["invoice","schet","naklad"]): return "invoice"
         if any(w in f for w in ["contract","dogovor"]):         return "contract"
         if any(w in f for w in ["proposal","kp","predloz"]):  return "proposal"
