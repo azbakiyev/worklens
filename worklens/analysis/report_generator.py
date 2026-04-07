@@ -6,6 +6,43 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
+FONT_REGULAR = "ArialUnicode"
+FONT_BOLD    = "ArialUnicode"  # fallback same font for bold
+FONT_ITALIC  = "ArialUnicode"
+
+_FONTS_REGISTERED = False
+
+def _register_fonts():
+    global _FONTS_REGISTERED
+    if _FONTS_REGISTERED:
+        return
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    import os
+
+    # Try Arial Unicode (best Cyrillic support)
+    candidates = [
+        ("/Library/Fonts/Arial Unicode.ttf", "ArialUnicode"),
+        ("/System/Library/Fonts/Supplemental/Arial.ttf", "ArialUnicode"),
+        ("/System/Library/Fonts/Supplemental/Tahoma.ttf", "ArialUnicode"),
+        ("/System/Library/Fonts/Supplemental/Verdana.ttf", "ArialUnicode"),
+    ]
+    for font_path, name in candidates:
+        if os.path.exists(font_path):
+            try:
+                pdfmetrics.registerFont(TTFont(name, font_path))
+                _FONTS_REGISTERED = True
+                return
+            except Exception:
+                continue
+    # Fallback to built-in
+    global FONT_REGULAR, FONT_BOLD, FONT_ITALIC
+    FONT_REGULAR = FONT_REGULAR
+    FONT_BOLD    = FONT_BOLD
+    FONT_ITALIC  = "Helvetica-Oblique"
+    _FONTS_REGISTERED = True
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +58,7 @@ def generate_report(
     Generate PDF report with automation suggestions.
     Returns path to generated file.
     """
+    _register_fonts()
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -52,9 +90,9 @@ def generate_report(
     )
 
     styles = getSampleStyleSheet()
-    h1  = ParagraphStyle("h1",  fontSize=22, textColor=GREEN, spaceAfter=4,  fontName="Helvetica-Bold")
-    h2  = ParagraphStyle("h2",  fontSize=14, textColor=DARK,  spaceAfter=8,  spaceBefore=16, fontName="Helvetica-Bold")
-    h3  = ParagraphStyle("h3",  fontSize=11, textColor=DARK,  spaceAfter=4,  fontName="Helvetica-Bold")
+    h1  = ParagraphStyle("h1",  fontSize=22, textColor=GREEN, spaceAfter=4,  fontName=FONT_BOLD)
+    h2  = ParagraphStyle("h2",  fontSize=14, textColor=DARK,  spaceAfter=8,  spaceBefore=16, fontName=FONT_BOLD)
+    h3  = ParagraphStyle("h3",  fontSize=11, textColor=DARK,  spaceAfter=4,  fontName=FONT_BOLD)
     body= ParagraphStyle("body",fontSize=10, textColor=GRAY,  spaceAfter=6,  leading=16)
     sm  = ParagraphStyle("sm",  fontSize=9,  textColor=GRAY,  spaceAfter=4)
     cen = ParagraphStyle("cen", fontSize=10, textColor=GRAY,  alignment=TA_CENTER)
@@ -68,7 +106,7 @@ def generate_report(
         "sub", fontSize=16, textColor=GRAY, spaceAfter=6
     )))
     story.append(Paragraph(company_name, ParagraphStyle(
-        "co", fontSize=13, textColor=DARK, spaceAfter=4, fontName="Helvetica-Bold"
+        "co", fontSize=13, textColor=DARK, spaceAfter=4, fontName=FONT_BOLD
     )))
     story.append(Paragraph(
         datetime.now().strftime("%d %B %Y"),
@@ -96,12 +134,12 @@ def generate_report(
     t.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), GREEN),
         ("TEXTCOLOR",  (0,0), (-1,0), white),
-        ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTNAME",   (0,0), (-1,0), FONT_BOLD),
         ("FONTSIZE",   (0,0), (-1,0), 10),
         ("BACKGROUND", (0,1), (-1,-1), LGRAY),
         ("ROWBACKGROUNDS", (0,1), (-1,-1), [white, LGRAY]),
         ("FONTSIZE",   (0,1), (-1,-1), 10),
-        ("FONTNAME",   (0,1), (0,-1), "Helvetica-Bold"),
+        ("FONTNAME",   (0,1), (0,-1), FONT_BOLD),
         ("TEXTCOLOR",  (1,1), (1,-1), DARK),
         ("ALIGN",      (1,0), (1,-1), "RIGHT"),
         ("GRID",       (0,0), (-1,-1), 0.5, HexColor("#e0e0e0")),
@@ -138,7 +176,7 @@ def generate_report(
             at.setStyle(TableStyle([
                 ("BACKGROUND", (0,0), (-1,0), DARK),
                 ("TEXTCOLOR",  (0,0), (-1,0), white),
-                ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+                ("FONTNAME",   (0,0), (-1,0), FONT_BOLD),
                 ("FONTSIZE",   (0,0), (-1,-1), 9),
                 ("ROWBACKGROUNDS", (0,1), (-1,-1), [white, LGRAY]),
                 ("GRID", (0,0), (-1,-1), 0.5, HexColor("#e0e0e0")),
@@ -170,7 +208,7 @@ def generate_report(
         title_data = [[
             Paragraph(f"{i}. {sg.get('title','')}", h3),
             Paragraph(f"● {pri_label}", ParagraphStyle(
-                "pri", fontSize=9, textColor=pri_color, fontName="Helvetica-Bold",
+                "pri", fontSize=9, textColor=pri_color, fontName=FONT_BOLD,
                 alignment=TA_RIGHT
             ))
         ]]
@@ -198,14 +236,14 @@ def generate_report(
         rt = Table(roi_data, colWidths=[2.5*cm, 3.5*cm, 3*cm, 3*cm, 5*cm])
         rt.setStyle(TableStyle([
             ("BACKGROUND", (0,0), (-1,0), HexColor("#e8f5e9")),
-            ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTNAME",   (0,0), (-1,0), FONT_BOLD),
             ("FONTSIZE",   (0,0), (-1,-1), 8),
             ("ALIGN",      (0,0), (-1,-1), "CENTER"),
             ("GRID",       (0,0), (-1,-1), 0.5, HexColor("#c8e6c9")),
             ("ROWHEIGHT",  (0,0), (-1,-1), 18),
             ("BACKGROUND", (0,1), (-1,1), HexColor("#f9fff9")),
             ("TEXTCOLOR",  (1,1), (1,1), GREEN),
-            ("FONTNAME",   (1,1), (1,1), "Helvetica-Bold"),
+            ("FONTNAME",   (1,1), (1,1), FONT_BOLD),
         ]))
         block.append(rt)
         block.append(Spacer(1, 0.3*cm))
