@@ -1,7 +1,4 @@
-"""
-Chat Classifier — classifies Telegram dialogs as work or personal,
-presents result to user for confirmation, saves approved list to SQLite.
-"""
+"""Chat Classifier -- classifies Telegram dialogs as work or personal."""
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,7 +7,7 @@ from typing import List, Set
 logger = logging.getLogger(__name__)
 
 WORK_KEYWORDS = {
-    "команд", "team", "отдел", "dept", "проект", "project",
+    "команда", "team", "отдел", "dept", "проект", "project",
     "office", "офис", "работа", "work", "закуп", "омто",
     "продаж", "sales", "marketing", "hr", "бухгал", "finance",
     "support", "тех", "task", "задач", "devops", "договор"
@@ -26,7 +23,7 @@ MIN_WORK_GROUP_SIZE = 3
 class ChatInfo:
     chat_id: int
     title: str
-    chat_type: str      # group / channel / direct / saved
+    chat_type: str
     member_count: int = 0
     is_suggested_work: bool = False
 
@@ -37,10 +34,6 @@ class ChatClassifier:
     def __init__(self, db_manager) -> None:
         self.db = db_manager
 
-    # ----------------------------------------------------------------
-    # Classification
-    # ----------------------------------------------------------------
-
     def classify(self, chats: List[ChatInfo]) -> List[ChatInfo]:
         for chat in chats:
             chat.is_suggested_work = self._is_work(chat)
@@ -48,7 +41,7 @@ class ChatClassifier:
 
     def _is_work(self, chat: ChatInfo) -> bool:
         title = chat.title.lower()
-        if chat.chat_type == "saved" or chat.chat_type == "direct":
+        if chat.chat_type in ("saved", "direct"):
             return False
         if any(kw in title for kw in PERSONAL_KEYWORDS):
             return False
@@ -57,53 +50,6 @@ class ChatClassifier:
         if chat.chat_type == "group" and chat.member_count >= MIN_WORK_GROUP_SIZE:
             return True
         return False
-
-    # ----------------------------------------------------------------
-    # Terminal UI
-    # ----------------------------------------------------------------
-
-    def interactive_selection(self, chats: List[ChatInfo]) -> List[ChatInfo]:
-        """Show terminal UI, let user toggle, return approved list."""
-        work = [c for c in chats if c.is_suggested_work]
-        other = [c for c in chats if not c.is_suggested_work]
-        ordered = work + other
-        selected: Set[int] = {c.chat_id for c in work}
-
-        def _render():
-            print()
-            for i, c in enumerate(ordered, 1):
-                mark = "✅" if c.chat_id in selected else "□ "
-                members = f"  {c.member_count} уч." if c.member_count else ""
-                print(f"  [{i:2}] {mark} {c.title[:45]:<47}{members}")
-
-        print("\n" + "=" * 55)
-        print("  📋 WorkLens — Выбери рабочие чаты")
-        print("=" * 55)
-        print(f"  ✅ = мониторить | □ = игнорировать | Всего чатов: {len(chats)}")
-        _render()
-
-        while True:
-            print("\n  Введи номера для переключения (напр.: "3 7"), Enter — подтвердить:")
-            raw = input("  > ").strip()
-            if not raw:
-                break
-            try:
-                for idx in [int(x) - 1 for x in raw.split()]:
-                    if 0 <= idx < len(ordered):
-                        cid = ordered[idx].chat_id
-                        selected.discard(cid) if cid in selected else selected.add(cid)
-                _render()
-            except ValueError:
-                print("  ⚠️  Введи числа через пробел")
-
-        approved = [c for c in ordered if c.chat_id in selected]
-        print(f"\n  ✅ Мониторинг включён для {len(approved)} чатов
-")
-        return approved
-
-    # ----------------------------------------------------------------
-    # DB persistence
-    # ----------------------------------------------------------------
 
     def save_approved(self, chats: List[ChatInfo]) -> None:
         from sqlalchemy import text
