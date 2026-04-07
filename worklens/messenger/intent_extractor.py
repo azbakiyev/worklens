@@ -1,11 +1,11 @@
 """
-Intent Extractor -- calls WorkLens backend (extella) to analyze messages.
+Intent Extractor -- sends messages to WorkLens API server for analysis.
 
 PRIVACY:
-  - Message text sent to WorkLens server for analysis
-  - Text is NOT stored on the server -- only JSON intent returned
-  - OpenAI key stored server-side, never exposed to client
-  - Voice audio transcribed via Whisper, then immediately deleted locally
+  - Message text sent to WorkLens API (HTTPS), analyzed, then discarded
+  - Text is NEVER stored on the server -- only JSON intent returned
+  - OpenAI key lives on the server only, never exposed to clients
+  - Voice audio: downloaded locally, sent to server as base64, deleted immediately
 """
 import logging
 from pathlib import Path
@@ -13,18 +13,16 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-WORKLENS_API_URL = "https://api.extella.ai"
-WORKLENS_EXPERT  = "worklens_analyze_intent"
-WORKLENS_TOKEN   = "9060ee04-9506-4641-b461-d6c5d8713589"  # extella API token
-CLIENT_TOKEN     = "wl_9060ee04-9506-4641-b461-d6c5d8713589"  # WorkLens client token
+WORKLENS_API_URL = "https://web-production-3c1ef.up.railway.app"
+WORKLENS_TOKEN   = "wl_9060ee04-9506-4641-b461-d6c5d8713589"
 
 
 class IntentExtractor:
-    """Analyzes message text via WorkLens backend. Never stores input content."""
+    """Analyzes messages via WorkLens API. Never stores input content."""
 
     def extract_intent(self, text: str) -> dict:
         """
-        Send text to WorkLens backend, get structured intent.
+        Send text to WorkLens API, get structured intent JSON.
         Text is NOT stored after this call returns.
         """
         if not text or not text.strip():
@@ -32,36 +30,30 @@ class IntentExtractor:
         try:
             import requests
             resp = requests.post(
-                f"{WORKLENS_API_URL}/api/expert/run",
-                headers={
-                    "X-Auth-Token": WORKLENS_TOKEN,
-                    "Content-Type": "application/json"
-                },
+                f"{WORKLENS_API_URL}/analyze",
                 json={
-                    "expert_name": WORKLENS_EXPERT,
-                    "params": {
-                        "text": text[:2000],
-                        "client_token": CLIENT_TOKEN,
-                        "source": "telegram"
-                    }
+                    "text":   text.strip()[:2000],
+                    "token":  WORKLENS_TOKEN,
+                    "source": "telegram"
                 },
                 timeout=35
             )
+            if resp.status_code == 401:
+                logger.error("WorkLens API: invalid token")
+                return self._empty()
+            if resp.status_code == 429:
+                logger.warning("WorkLens API: rate limit")
+                return self._empty()
             if resp.status_code != 200:
                 logger.error(f"WorkLens API error: {resp.status_code}")
                 return self._empty()
 
             data = resp.json()
-            result = data.get("result", {})
-            if isinstance(result, str):
-                import json as _json
-                result = _json.loads(result)
-
-            if not result.get("ok"):
-                logger.warning(f"Intent error: {result.get('error')}")
+            if not data.get("ok"):
+                logger.warning(f"Intent error: {data}")
                 return self._empty()
 
-            return result.get("intent", self._empty())
+            return data.get("intent", self._empty())
 
         except Exception as e:
             logger.error(f"Intent extraction failed: {e}")
@@ -69,30 +61,22 @@ class IntentExtractor:
 
     def transcribe_voice(self, audio_path: str) -> Optional[str]:
         """
-        Transcribe voice message via Whisper API (server-side).
-        Audio file is deleted after transcription.
+        Transcribe voice via WorkLens API (Whisper server-side).
+        Audio file deleted locally after sending.
         """
         path = Path(audio_path)
         try:
             if not path.exists():
                 return None
-            import requests
-            with open(path, "rb") as f:
-                resp = requests.post(
-                    f"{WORKLENS_API_URL}/api/expert/run",
-                    headers={"X-Auth-Token": WORKLENS_TOKEN},
-                    json={
-                        "expert_name": "worklens_transcribe_voice",
-                        "params": {
-                            "client_token": CLIENT_TOKEN,
-                            "audio_b64": __import__('base64').b64encode(f.read()).decode()
-                        }
-                    },
-                    timeout=60
-                )
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("result", {}).get("transcript", "")
+            import requests, base64
+            audio_b64 = base64.b64encode(path.read_bytes()).decode()
+            resp = requests.post(
+                f"{WORKLENS_API_URL}/transcribe",
+                json={"audio_b64": audio_b64, "token": WORKLENS_TOKEN},
+                timeout=60
+            )
+            if resp.status_code == 200 and resp.json().get("ok"):
+                return resp.json().get("transcript", "")
             return None
         except Exception as e:
             logger.error(f"Transcription failed: {e}")
@@ -104,6 +88,6 @@ class IntentExtractor:
     def _empty(self) -> dict:
         return {
             "has_task": False, "has_deadline": False, "deadline_text": None,
-            "has_agreement": False, "has_question": False, "action_required": False,
-            "urgency": "low", "has_file_request": False
+            "has_agreement": False, "has_question": False,
+            "action_required": False, "urgency": "low", "has_file_request": False
         }
