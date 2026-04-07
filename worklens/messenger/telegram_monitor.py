@@ -65,9 +65,9 @@ class TelegramMonitor:
                         chat_type    = "group"
                         member_count = getattr(entity, "participants_count", 0) or 0
                     elif dialog.is_channel:
-                        chat_type    = "channel"
-                        member_count = getattr(entity, "participants_count", 0) or 0
-                    elif dialog.name == "Saved Messages":
+                        continue  # skip channels -- one-way broadcast, not conversations
+
+                    if dialog.name == "Saved Messages":
                         chat_type = "saved"
                     chats.append(ChatInfo(
                         chat_id=dialog.id,
