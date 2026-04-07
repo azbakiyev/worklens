@@ -239,10 +239,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
 <!-- Setup Modal -->
 <div class="mbg" id="modal">
   <div class="modal">
+    <!-- step: keys (new user) -->
+    <div id="st-keys">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px">Шаг 1 из 4</span>
+        <h3 style="margin:0">API ключи</h3>
+      </div>
+      <p>Получите бесплатные ключи на <a href="https://my.telegram.org" target="_blank" style="color:#2196f3">my.telegram.org</a> → API development tools → Desktop app</p>
+      <div class="ig"><label class="ilabel">api_id</label>
+        <input class="inp" id="inp-apiid" type="text" placeholder="12345678"></div>
+      <div class="ig"><label class="ilabel">api_hash</label>
+        <input class="inp" id="inp-apihash" type="text" placeholder="a1b2c3d4..."></div>
+      <div class="ig" style="margin-top:14px">
+        <label class="ilabel">OpenAI API ключ <a href="https://platform.openai.com/api-keys" target="_blank" style="color:#2196f3;font-size:11px">получить</a></label>
+        <input class="inp" id="inp-oaikey" type="text" placeholder="sk-proj-...">
+        <div style="font-size:11px;color:#888;margin-top:4px">~$0.01/день · нужен для анализа сообщений</div>
+      </div>
+      <div class="ma">
+        <button class="btn btn-p" onclick="doSaveKeys()">Продолжить →</button>
+        <button class="btn btn-o" onclick="closeModal()">Отмена</button>
+      </div>
+    </div>
+
     <!-- step: phone -->
-    <div id="st-phone">
-      <h3>Подключить Telegram</h3>
-      <p>Введите номер телефона. Telegram пришлёт код подтверждения в приложение.</p>
+    <div id="st-phone" style="display:none">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px">Шаг 2 из 4</span>
+        <h3 style="margin:0">Номер телефона</h3>
+      </div>
+      <p>Telegram пришлёт код подтверждения в приложение.</p>
       <div class="ig"><label class="ilabel">Номер телефона</label>
         <input class="inp" id="inp-phone" type="tel" placeholder="+7..."></div>
       <div class="ma">
@@ -252,7 +277,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     </div>
     <!-- step: code -->
     <div id="st-code" style="display:none">
-      <h3>Введите код</h3>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px">Шаг 3 из 4</span>
+        <h3 style="margin:0">Код из Telegram</h3>
+      </div>
       <p>Telegram прислал код в ваше приложение.</p>
       <div class="ig"><label class="ilabel">Код из Telegram</label>
         <input class="inp" id="inp-code" type="text" placeholder="12345"></div>
@@ -263,7 +291,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     </div>
     <!-- step: chats -->
     <div id="st-chats" style="display:none">
-      <h3>Выбери рабочие чаты</h3>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px">Шаг 4 из 4</span>
+        <h3 style="margin:0">Рабочие чаты</h3>
+      </div>
       <p>WorkLens будет анализировать только выбранные чаты. Тексты не сохраняются.</p>
       <div id="chats-wrap" style="max-height:300px;overflow-y:auto;margin-bottom:14px"></div>
       <div class="ma">
@@ -412,12 +443,29 @@ function renderIntent(t, full=false) {
 
 // ── setup modal ───────────────────────────────────────────────────────────────
 function showSetup() {
-  ['phone','code','chats','done'].forEach(s=>hide('st-'+s));
-  show('st-phone'); setErr('');
+  ['keys','phone','code','chats','done'].forEach(s=>hide('st-'+s));
+  setErr('');
+  // Show keys step only if not yet configured (check via stats)
+  get('/api/status').then(s=>{
+    if(!s.openai_ok || !s.telegram_user) show('st-keys');
+    else show('st-phone');
+  });
   document.getElementById('modal').classList.add('open');
 }
 function openChatSelect() { window.open('/setup/chats','_blank','width=720,height=700'); }
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+async function doSaveKeys() {
+  const api_id   = document.getElementById('inp-apiid').value.trim();
+  const api_hash = document.getElementById('inp-apihash').value.trim();
+  const openai_key = document.getElementById('inp-oaikey').value.trim();
+  if(!api_id||!api_hash){setErr('Введите api_id и api_hash');return}
+  if(!openai_key){setErr('Введите OpenAI API ключ');return}
+  setErr('Сохраняем...');
+  const r = await post('/api/setup/save_keys',{api_id,api_hash,openai_key});
+  if(r.ok){setErr('');hide('st-keys');show('st-phone');}
+  else setErr(r.error||'Ошибка');
+}
 
 async function doSendCode() {
   const phone = document.getElementById('inp-phone').value.trim();
@@ -705,6 +753,27 @@ def create_app(db_manager, config_manager, capture=None, tg_monitor=None):
         )
 
     # ── API: Telegram setup ────────────────────────────────────────────────────
+
+    @app.route("/api/setup/save_keys", methods=["POST"])
+    def api_save_keys():
+        data = request.json or {}
+        api_id   = str(data.get("api_id",   "")).strip()
+        api_hash = str(data.get("api_hash", "")).strip()
+        openai_key = str(data.get("openai_key", "")).strip()
+
+        if not api_id or not api_hash:
+            return jsonify({"ok": False, "error": "api_id и api_hash обязательны"})
+        if not openai_key or not openai_key.startswith("sk-"):
+            return jsonify({"ok": False, "error": "Введите корректный OpenAI API ключ"})
+
+        try:
+            cfg().set("telegram_api_id",   int(api_id))
+            cfg().set("telegram_api_hash", api_hash)
+            cfg().set("openai_api_key",    openai_key)
+            return jsonify({"ok": True})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)})
+
     @app.route("/api/setup/send_code", methods=["POST"])
     def api_send_code():
         phone = (request.json or {}).get("phone", "").strip()
