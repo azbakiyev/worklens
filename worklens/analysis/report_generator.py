@@ -132,6 +132,7 @@ def generate_report(
 
     t = Table(summary_data, colWidths=[10*cm, 7*cm])
     t.setStyle(TableStyle([
+        ("FONTNAME", (0,0), (-1,-1), FONT_REGULAR),
         ("BACKGROUND", (0,0), (-1,0), GREEN),
         ("TEXTCOLOR",  (0,0), (-1,0), white),
         ("FONTNAME",   (0,0), (-1,0), FONT_BOLD),
@@ -174,6 +175,7 @@ def generate_report(
 
             at = Table(app_data, colWidths=[6*cm, 4*cm, 3*cm, 4*cm])
             at.setStyle(TableStyle([
+        ("FONTNAME", (0,0), (-1,-1), FONT_REGULAR),
                 ("BACKGROUND", (0,0), (-1,0), DARK),
                 ("TEXTCOLOR",  (0,0), (-1,0), white),
                 ("FONTNAME",   (0,0), (-1,0), FONT_BOLD),
@@ -213,7 +215,8 @@ def generate_report(
             ))
         ]]
         tt = Table(title_data, colWidths=[13*cm, 4*cm])
-        tt.setStyle(TableStyle([("VALIGN", (0,0), (-1,-1), "MIDDLE")]))
+        tt.setStyle(TableStyle([
+        ("FONTNAME", (0,0), (-1,-1), FONT_REGULAR),("VALIGN", (0,0), (-1,-1), "MIDDLE")]))
         block.append(tt)
 
         block.append(Paragraph(sg.get("description",""), body))
@@ -235,6 +238,7 @@ def generate_report(
         ]
         rt = Table(roi_data, colWidths=[2.5*cm, 3.5*cm, 3*cm, 3*cm, 5*cm])
         rt.setStyle(TableStyle([
+        ("FONTNAME", (0,0), (-1,-1), FONT_REGULAR),
             ("BACKGROUND", (0,0), (-1,0), HexColor("#e8f5e9")),
             ("FONTNAME",   (0,0), (-1,0), FONT_BOLD),
             ("FONTSIZE",   (0,0), (-1,-1), 8),
