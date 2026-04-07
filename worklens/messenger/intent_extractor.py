@@ -1,117 +1,109 @@
 """
-Intent Extractor — analyzes message text and voice via OpenAI API.
+Intent Extractor -- calls WorkLens backend (extella) to analyze messages.
 
-PRIVACY CONTRACT:
-  - Message text is sent to OpenAI API and immediately discarded after response
-  - Voice audio is sent to Whisper API and the local file is deleted after
-  - NO message content is ever written to disk or database
-  - Only the extracted JSON intent structure is persisted
+PRIVACY:
+  - Message text sent to WorkLens server for analysis
+  - Text is NOT stored on the server -- only JSON intent returned
+  - OpenAI key stored server-side, never exposed to client
+  - Voice audio transcribed via Whisper, then immediately deleted locally
 """
-import json
 import logging
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = """You are a work assistant. Analyze the message and return ONLY valid JSON.
-No explanations. No markdown. Just the JSON object.
-
-JSON schema (all fields required):
-{
-  "has_task": bool,          // assigns a task or action item
-  "has_deadline": bool,      // specific deadline mentioned
-  "deadline_text": str|null, // deadline as mentioned or null
-  "has_agreement": bool,     // parties agreed on something
-  "has_question": bool,      // contains a question needing answer
-  "action_required": bool,   // recipient needs to act
-  "urgency": str,            // "low" | "medium" | "high"
-  "has_file_request": bool   // requesting a file/document
-}"""
+WORKLENS_API_URL = "https://api.extella.ai"
+WORKLENS_EXPERT  = "worklens_analyze_intent"
+WORKLENS_TOKEN   = "9060ee04-9506-4641-b461-d6c5d8713589"  # extella API token
+CLIENT_TOKEN     = "wl_9060ee04-9506-4641-b461-d6c5d8713589"  # WorkLens client token
 
 
 class IntentExtractor:
-    """Extracts structured intents from text. Never stores input content."""
-
-    def __init__(self, api_key: str) -> None:
-        self._api_key = api_key
-        self._client = None
-
-    def _client_(self):
-        if self._client is None:
-            from openai import OpenAI
-            self._client = OpenAI(api_key=self._api_key)
-        return self._client
+    """Analyzes message text via WorkLens backend. Never stores input content."""
 
     def extract_intent(self, text: str) -> dict:
         """
-        Send text to GPT-4o-mini, get structured intent.
-        Input text is NOT stored after this call returns.
+        Send text to WorkLens backend, get structured intent.
+        Text is NOT stored after this call returns.
         """
         if not text or not text.strip():
             return self._empty()
         try:
-            resp = self._client_().chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": text[:2000]},
-                ],
-                temperature=0.1,
-                max_tokens=200,
-                response_format={"type": "json_object"},
+            import requests
+            resp = requests.post(
+                f"{WORKLENS_API_URL}/api/expert/run",
+                headers={
+                    "X-Auth-Token": WORKLENS_TOKEN,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "expert_name": WORKLENS_EXPERT,
+                    "params": {
+                        "text": text[:2000],
+                        "client_token": CLIENT_TOKEN,
+                        "source": "telegram"
+                    }
+                },
+                timeout=35
             )
-            raw = json.loads(resp.choices[0].message.content)
-            return self._validate(raw)
+            if resp.status_code != 200:
+                logger.error(f"WorkLens API error: {resp.status_code}")
+                return self._empty()
+
+            data = resp.json()
+            result = data.get("result", {})
+            if isinstance(result, str):
+                import json as _json
+                result = _json.loads(result)
+
+            if not result.get("ok"):
+                logger.warning(f"Intent error: {result.get('error')}")
+                return self._empty()
+
+            return result.get("intent", self._empty())
+
         except Exception as e:
             logger.error(f"Intent extraction failed: {e}")
             return self._empty()
 
     def transcribe_voice(self, audio_path: str) -> Optional[str]:
         """
-        Transcribe voice message via Whisper API.
-        Audio file is deleted after transcription regardless of outcome.
-        Returns transcript text or None on failure.
+        Transcribe voice message via Whisper API (server-side).
+        Audio file is deleted after transcription.
         """
         path = Path(audio_path)
         try:
             if not path.exists():
-                logger.error(f"Audio not found: {audio_path}")
                 return None
+            import requests
             with open(path, "rb") as f:
-                result = self._client_().audio.transcriptions.create(
-                    model="whisper-1",
-                    file=f,
+                resp = requests.post(
+                    f"{WORKLENS_API_URL}/api/expert/run",
+                    headers={"X-Auth-Token": WORKLENS_TOKEN},
+                    json={
+                        "expert_name": "worklens_transcribe_voice",
+                        "params": {
+                            "client_token": CLIENT_TOKEN,
+                            "audio_b64": __import__('base64').b64encode(f.read()).decode()
+                        }
+                    },
+                    timeout=60
                 )
-            logger.debug(f"Transcribed {path.name}: {len(result.text)} chars")
-            return result.text
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("result", {}).get("transcript", "")
+            return None
         except Exception as e:
-            logger.error(f"Whisper transcription failed: {e}")
+            logger.error(f"Transcription failed: {e}")
             return None
         finally:
-            try:
-                path.unlink(missing_ok=True)
-                logger.debug(f"Deleted audio: {path.name}")
-            except Exception:
-                pass
+            path.unlink(missing_ok=True)
+            logger.debug(f"Deleted audio: {path.name}")
 
     def _empty(self) -> dict:
         return {
-            "has_task": False,
-            "has_deadline": False,
-            "deadline_text": None,
-            "has_agreement": False,
-            "has_question": False,
-            "action_required": False,
-            "urgency": "low",
-            "has_file_request": False,
+            "has_task": False, "has_deadline": False, "deadline_text": None,
+            "has_agreement": False, "has_question": False, "action_required": False,
+            "urgency": "low", "has_file_request": False
         }
-
-    def _validate(self, raw: dict) -> dict:
-        result = self._empty()
-        for key in result:
-            if key in raw:
-                result[key] = raw[key]
-        if result["urgency"] not in ("low", "medium", "high"):
-            result["urgency"] = "medium"
-        return result
