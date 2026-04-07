@@ -10,7 +10,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 
-# Silence ALL background noise during interactive setup
 if "--setup-telegram" in sys.argv:
     for _lg in ("worklens.capture", "worklens.storage", "worklens.pattern",
                 "telethon", "asyncio", "werkzeug", "urllib3"):
@@ -27,6 +26,7 @@ def main() -> None:
     from worklens.capture.capture_module import ActivityCapture
     from worklens.pattern.pattern_engine import PatternEngine
     from worklens.config_manager import ConfigManager
+    from worklens.dashboard.app import start_dashboard
 
     config = ConfigManager()
     db     = DatabaseManager()
@@ -34,24 +34,26 @@ def main() -> None:
 
     capture = ActivityCapture(db_manager=db, interval=5.0)
 
-    # Do NOT start capture during interactive setup
     if "--setup-telegram" not in sys.argv:
         capture.start()
         logger.info("[OK] Capture started")
 
     pattern_engine = PatternEngine(db)
-
     tg_monitor = _setup_telegram(db, config)
+
     if tg_monitor:
         tg_monitor.start()
         logger.info("[OK] Telegram monitor started")
     else:
-        logger.info("[--] Telegram monitor skipped  (run with --setup-telegram to configure)")
+        logger.info("[--] Telegram skipped  (run with --setup-telegram to configure)")
 
-    # After setup done, start capture for ongoing operation
     if "--setup-telegram" in sys.argv:
         capture.start()
         logger.info("[OK] Capture started")
+
+    # Start dashboard
+    start_dashboard(db, config, capture=capture, tg_monitor=tg_monitor)
+    logger.info("[OK] Dashboard at http://localhost:7771")
 
     def on_shutdown(sig, frame):
         logger.info("[WorkLens] Shutting down...")
