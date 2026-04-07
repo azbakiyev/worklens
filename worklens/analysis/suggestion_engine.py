@@ -17,7 +17,7 @@ from typing import List, Dict
 logger = logging.getLogger(__name__)
 
 WORKLENS_API_URL = "https://web-production-3c1ef.up.railway.app"
-WORKLENS_TOKEN   = "wl_9060ee04-9506-4641-b461-d6c5d8713589"
+WORKLENS_TOKEN   = "wl_t-oYEjaAUaHGB0dpaNidVE6QyP7SwWuL"
 
 ANALYSIS_PROMPT = """You are a business process automation expert.
 
