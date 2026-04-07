@@ -93,16 +93,16 @@ def generate_report(
     h1  = ParagraphStyle("h1",  fontSize=22, textColor=GREEN, spaceAfter=4,  fontName=FONT_BOLD)
     h2  = ParagraphStyle("h2",  fontSize=14, textColor=DARK,  spaceAfter=8,  spaceBefore=16, fontName=FONT_BOLD)
     h3  = ParagraphStyle("h3",  fontSize=11, textColor=DARK,  spaceAfter=4,  fontName=FONT_BOLD)
-    body= ParagraphStyle("body",fontSize=10, textColor=GRAY,  spaceAfter=6,  leading=16)
-    sm  = ParagraphStyle("sm",  fontSize=9,  textColor=GRAY,  spaceAfter=4)
-    cen = ParagraphStyle("cen", fontSize=10, textColor=GRAY,  alignment=TA_CENTER)
+    body= ParagraphStyle("body",fontSize=10, textColor=GRAY,  spaceAfter=6,  leading=16, fontName=FONT_REGULAR)
+    sm  = ParagraphStyle("sm",  fontSize=9,  textColor=GRAY,  spaceAfter=4,  fontName=FONT_REGULAR)
+    cen = ParagraphStyle("cen", fontSize=10, textColor=GRAY,  alignment=TA_CENTER, fontName=FONT_REGULAR)
 
     story = []
 
     # ── Cover ─────────────────────────────────────────────────────────────────
     story.append(Spacer(1, 1.5*cm))
     story.append(Paragraph("WorkLens", h1))
-    story.append(Paragraph("Отчёт об автоматизации рабочих процессов", ParagraphStyle(
+    story.append(Paragraph("Отчёт об автоматизации рабочих процессов", ParagraphStyle(  # noqa
         "sub", fontSize=16, textColor=GRAY, spaceAfter=6
     )))
     story.append(Paragraph(company_name, ParagraphStyle(
@@ -110,7 +110,7 @@ def generate_report(
     )))
     story.append(Paragraph(
         datetime.now().strftime("%d %B %Y"),
-        ParagraphStyle("dt", fontSize=11, textColor=GRAY, spaceAfter=20)
+        ParagraphStyle("dt", fontSize=11, textColor=GRAY, spaceAfter=20, fontName=FONT_REGULAR)
     ))
     story.append(HRFlowable(width="100%", thickness=2, color=GREEN, spaceAfter=24))
 
@@ -219,7 +219,7 @@ def generate_report(
         block.append(Paragraph(sg.get("description",""), body))
         block.append(Paragraph(
             f"<i>Доказательство:</i> {sg.get('evidence','')}",
-            ParagraphStyle("ev", fontSize=9, textColor=GRAY, spaceAfter=8, leading=14)
+            ParagraphStyle("ev", fontSize=9, textColor=GRAY, spaceAfter=8, leading=14, fontName=FONT_REGULAR)
         ))
 
         # ROI table
@@ -257,7 +257,7 @@ def generate_report(
     story.append(Paragraph(
         f"Отчёт сгенерирован WorkLens · {datetime.now().strftime('%d.%m.%Y')} · "
         f"Данные хранятся локально на устройстве сотрудника",
-        ParagraphStyle("foot", fontSize=8, textColor=GRAY, alignment=TA_CENTER)
+        ParagraphStyle("foot", fontSize=8, textColor=GRAY, alignment=TA_CENTER, fontName=FONT_REGULAR)
     ))
 
     doc.build(story)
