@@ -250,10 +250,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
         <input class="inp" id="inp-apiid" type="text" placeholder="12345678"></div>
       <div class="ig"><label class="ilabel">api_hash</label>
         <input class="inp" id="inp-apihash" type="text" placeholder="a1b2c3d4..."></div>
-      <div class="ig" style="margin-top:14px">
-        <label class="ilabel">OpenAI API ключ <a href="https://platform.openai.com/api-keys" target="_blank" style="color:#2196f3;font-size:11px">получить</a></label>
-        <input class="inp" id="inp-oaikey" type="text" placeholder="sk-proj-...">
-        <div style="font-size:11px;color:#888;margin-top:4px">~$0.01/день · нужен для анализа сообщений</div>
       </div>
       <div class="ma">
         <button class="btn btn-p" onclick="doSaveKeys()">Продолжить →</button>
@@ -447,7 +443,7 @@ function showSetup() {
   setErr('');
   // Show keys step only if not yet configured (check via stats)
   get('/api/status').then(s=>{
-    if(!s.openai_ok || !s.telegram_user) show('st-keys');
+    if(!s.telegram_user) show('st-keys');
     else show('st-phone');
   });
   document.getElementById('modal').classList.add('open');
@@ -457,42 +453,6 @@ function closeModal() { document.getElementById('modal').classList.remove('open'
 
 async function doSaveKeys() {
   const api_id   = document.getElementById('inp-apiid').value.trim();
-  const api_hash = document.getElementById('inp-apihash').value.trim();
-  const openai_key = document.getElementById('inp-oaikey').value.trim();
-  if(!api_id||!api_hash){setErr('Введите api_id и api_hash');return}
-  if(!openai_key){setErr('Введите OpenAI API ключ');return}
-  setErr('Сохраняем...');
-  const r = await post('/api/setup/save_keys',{api_id,api_hash,openai_key});
-  if(r.ok){setErr('');hide('st-keys');show('st-phone');}
-  else setErr(r.error||'Ошибка');
-}
-
-async function doSendCode() {
-  const phone = document.getElementById('inp-phone').value.trim();
-  if(!phone){setErr('Введите номер');return}
-  setErr('Отправляем...');
-  const r = await post('/api/setup/send_code',{phone});
-  if(r.ok){ setErr(''); hide('st-phone'); show('st-code'); }
-  else setErr(r.error||'Ошибка');
-}
-
-async function doVerify() {
-  const code = document.getElementById('inp-code').value.trim();
-  if(!code){setErr('Введите код');return}
-  setErr('Проверяем...');
-  const r = await post('/api/setup/verify',{code});
-  if(r.ok){
-    setErr(''); hide('st-code'); show('st-chats');
-    _chats = r.chats||[];
-    _sel = new Set(_chats.filter(c=>c.suggested).map(c=>c.id));
-    renderChats();
-  } else setErr(r.error||'Неверный код');
-}
-
-function renderChats() {
-  const work=_chats.filter(c=>c.suggested), other=_chats.filter(c=>!c.suggested);
-  let h='';
-  if(work.length) h+=`<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;padding:8px 0 4px">Рабочие (${work.length})</div>`+work.map(chatCard).join('');
   if(other.length) h+=`<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;padding:8px 0 4px">Остальные (${other.length})</div>`+other.map(chatCard).join('');
   document.getElementById('chats-wrap').innerHTML=h;
 }
@@ -746,7 +706,7 @@ def create_app(db_manager, config_manager, capture=None, tg_monitor=None):
             {
                 "capture_running": bool(capture and capture.is_running),
                 "events_total": total,
-                "openai_ok": cfg().has("openai_api_key"),
+                "openai_ok": True,
                 "telegram_user": cfg().get("telegram_user", ""),
                 "chats_count": chats_count,
             }
@@ -759,17 +719,13 @@ def create_app(db_manager, config_manager, capture=None, tg_monitor=None):
         data = request.json or {}
         api_id   = str(data.get("api_id",   "")).strip()
         api_hash = str(data.get("api_hash", "")).strip()
-        openai_key = str(data.get("openai_key", "")).strip()
 
         if not api_id or not api_hash:
             return jsonify({"ok": False, "error": "api_id и api_hash обязательны"})
-        if not openai_key or not openai_key.startswith("sk-"):
-            return jsonify({"ok": False, "error": "Введите корректный OpenAI API ключ"})
 
         try:
             cfg().set("telegram_api_id",   int(api_id))
             cfg().set("telegram_api_hash", api_hash)
-            cfg().set("openai_api_key",    openai_key)
             return jsonify({"ok": True})
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)})
