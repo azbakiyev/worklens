@@ -239,31 +239,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
 <!-- Setup Modal -->
 <div class="mbg" id="modal">
   <div class="modal">
-    <!-- step: keys (new user) -->
-    <div id="st-keys">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span style="background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px">Шаг 1 из 4</span>
-        <h3 style="margin:0">API ключи</h3>
-      </div>
-      <p>Получите бесплатные ключи на <a href="https://my.telegram.org" target="_blank" style="color:#2196f3">my.telegram.org</a> → API development tools → Desktop app</p>
-      <div class="ig"><label class="ilabel">api_id</label>
-        <input class="inp" id="inp-apiid" type="text" placeholder="12345678"></div>
-      <div class="ig"><label class="ilabel">api_hash</label>
-        <input class="inp" id="inp-apihash" type="text" placeholder="a1b2c3d4..."></div>
-      </div>
-      <div class="ma">
-        <button class="btn btn-p" onclick="doSaveKeys()">Продолжить →</button>
-        <button class="btn btn-o" onclick="closeModal()">Отмена</button>
-      </div>
-    </div>
-
     <!-- step: phone -->
-    <div id="st-phone" style="display:none">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span style="background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px">Шаг 2 из 4</span>
-        <h3 style="margin:0">Номер телефона</h3>
-      </div>
-      <p>Telegram пришлёт код подтверждения в приложение.</p>
+    <div id="st-phone">
+      <h3>Подключить Telegram</h3>
+      <p>Введите номер телефона. Telegram пришлёт код подтверждения в приложение.</p>
       <div class="ig"><label class="ilabel">Номер телефона</label>
         <input class="inp" id="inp-phone" type="tel" placeholder="+7..."></div>
       <div class="ma">
@@ -273,10 +252,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     </div>
     <!-- step: code -->
     <div id="st-code" style="display:none">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span style="background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px">Шаг 3 из 4</span>
-        <h3 style="margin:0">Код из Telegram</h3>
-      </div>
+      <h3>Введите код</h3>
       <p>Telegram прислал код в ваше приложение.</p>
       <div class="ig"><label class="ilabel">Код из Telegram</label>
         <input class="inp" id="inp-code" type="text" placeholder="12345"></div>
@@ -287,10 +263,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     </div>
     <!-- step: chats -->
     <div id="st-chats" style="display:none">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span style="background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px">Шаг 4 из 4</span>
-        <h3 style="margin:0">Рабочие чаты</h3>
-      </div>
+      <h3>Выбери рабочие чаты</h3>
       <p>WorkLens будет анализировать только выбранные чаты. Тексты не сохраняются.</p>
       <div id="chats-wrap" style="max-height:300px;overflow-y:auto;margin-bottom:14px"></div>
       <div class="ma">
@@ -439,20 +412,39 @@ function renderIntent(t, full=false) {
 
 // ── setup modal ───────────────────────────────────────────────────────────────
 function showSetup() {
-  ['keys','phone','code','chats','done'].forEach(s=>hide('st-'+s));
-  setErr('');
-  // Show keys step only if not yet configured (check via stats)
-  get('/api/status').then(s=>{
-    if(!s.telegram_user) show('st-keys');
-    else show('st-phone');
-  });
+  ['phone','code','chats','done'].forEach(s=>hide('st-'+s));
+  show('st-phone'); setErr('');
   document.getElementById('modal').classList.add('open');
 }
 function openChatSelect() { window.open('/setup/chats','_blank','width=720,height=700'); }
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
 
-async function doSaveKeys() {
-  const api_id   = document.getElementById('inp-apiid').value.trim();
+async function doSendCode() {
+  const phone = document.getElementById('inp-phone').value.trim();
+  if(!phone){setErr('Введите номер');return}
+  setErr('Отправляем...');
+  const r = await post('/api/setup/send_code',{phone});
+  if(r.ok){ setErr(''); hide('st-phone'); show('st-code'); }
+  else setErr(r.error||'Ошибка');
+}
+
+async function doVerify() {
+  const code = document.getElementById('inp-code').value.trim();
+  if(!code){setErr('Введите код');return}
+  setErr('Проверяем...');
+  const r = await post('/api/setup/verify',{code});
+  if(r.ok){
+    setErr(''); hide('st-code'); show('st-chats');
+    _chats = r.chats||[];
+    _sel = new Set(_chats.filter(c=>c.suggested).map(c=>c.id));
+    renderChats();
+  } else setErr(r.error||'Неверный код');
+}
+
+function renderChats() {
+  const work=_chats.filter(c=>c.suggested), other=_chats.filter(c=>!c.suggested);
+  let h='';
+  if(work.length) h+=`<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;padding:8px 0 4px">Рабочие (${work.length})</div>`+work.map(chatCard).join('');
   if(other.length) h+=`<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;padding:8px 0 4px">Остальные (${other.length})</div>`+other.map(chatCard).join('');
   document.getElementById('chats-wrap').innerHTML=h;
 }
@@ -706,30 +698,13 @@ def create_app(db_manager, config_manager, capture=None, tg_monitor=None):
             {
                 "capture_running": bool(capture and capture.is_running),
                 "events_total": total,
-                "openai_ok": True,
+                "openai_ok": cfg().has("openai_api_key"),
                 "telegram_user": cfg().get("telegram_user", ""),
                 "chats_count": chats_count,
             }
         )
 
     # ── API: Telegram setup ────────────────────────────────────────────────────
-
-    @app.route("/api/setup/save_keys", methods=["POST"])
-    def api_save_keys():
-        data = request.json or {}
-        api_id   = str(data.get("api_id",   "")).strip()
-        api_hash = str(data.get("api_hash", "")).strip()
-
-        if not api_id or not api_hash:
-            return jsonify({"ok": False, "error": "api_id и api_hash обязательны"})
-
-        try:
-            cfg().set("telegram_api_id",   int(api_id))
-            cfg().set("telegram_api_hash", api_hash)
-            return jsonify({"ok": True})
-        except Exception as e:
-            return jsonify({"ok": False, "error": str(e)})
-
     @app.route("/api/setup/send_code", methods=["POST"])
     def api_send_code():
         phone = (request.json or {}).get("phone", "").strip()
